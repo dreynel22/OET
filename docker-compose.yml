@@ -11,16 +11,8 @@ services:
     volumes:
       - ./backend:/var/www/html
       - backend_vendor:/var/www/html/vendor
-    environment:
-      APP_ENV: local
-      APP_DEBUG: "true"
-      APP_URL: http://localhost:8000
-      DB_CONNECTION: pgsql
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_DATABASE: oet_db
-      DB_USERNAME: postgres
-      DB_PASSWORD: secret123
+    env_file:
+      - ./backend/.env
     depends_on:
       db:
         condition: service_healthy
@@ -43,16 +35,14 @@ services:
     image: postgres:17
     container_name: oet-database
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: oet_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: secret123
+    env_file:
+      - ./backend/.env
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d oet_db"]
+      test: ["CMD-SHELL", "pg_isready -U jl -d oet_db"]
       interval: 5s
       timeout: 5s
       retries: 5
