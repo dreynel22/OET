@@ -1,5 +1,6 @@
 
 import { useEffect, useState } from 'react';
+import Swal from 'sweetalert2';
 
 const API_URL = 'http://localhost:8000/api/equipment';
 
@@ -15,7 +16,10 @@ function App() {
   const [equipment, setEquipment] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+
   const [form, setForm] = useState(initialForm);
   const [validationErrors, setValidationErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -24,16 +28,45 @@ function App() {
     fetchEquipment();
   }, []);
 
+  // SweetAlert success notification
+  function showSuccess(message) {
+    Swal.fire({
+      icon: 'success',
+      title: 'Success!',
+      text: message,
+      confirmButtonColor: '#2563eb',
+      timer: 2000,
+      timerProgressBar: true,
+    });
+  }
+
+  // SweetAlert error notification
+  function showError(message) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Oops...',
+      text: message,
+      confirmButtonColor: '#dc2626',
+    });
+  }
+
+  // Fetch all equipment
   async function fetchEquipment() {
     try {
-      const response = await fetch(API_URL);
+      const response = await fetch(API_URL, {
+        headers: {
+          Accept: 'application/json',
+        },
+      });
 
       if (!response.ok) {
         throw new Error('Failed to fetch equipment.');
       }
 
       const data = await response.json();
+
       setEquipment(data);
+      setError('');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -41,6 +74,7 @@ function App() {
     }
   }
 
+  // Handle form input changes
   function handleChange(event) {
     const { name, value } = event.target;
 
@@ -50,18 +84,41 @@ function App() {
     }));
   }
 
-  function openForm() {
+  // Open create modal
+  function openCreateModal() {
+    setEditingId(null);
     setForm(initialForm);
     setValidationErrors({});
+    setError('');
     setShowForm(true);
   }
 
-  function cancelForm() {
+  // Open edit modal
+  function openEditModal(item) {
+    setEditingId(item.id);
+
+    setForm({
+      name: item.name,
+      category: item.category,
+      quantity: item.quantity,
+      status: item.status,
+      notes: item.notes || '',
+    });
+
+    setValidationErrors({});
+    setError('');
+    setShowForm(true);
+  }
+
+  // Close form modal
+  function closeFormModal() {
     setShowForm(false);
+    setEditingId(null);
     setForm(initialForm);
     setValidationErrors({});
   }
 
+  // Create or update equipment
   async function handleSubmit(event) {
     event.preventDefault();
 
@@ -70,35 +127,117 @@ function App() {
     setError('');
 
     try {
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          ...form,
-          quantity: Number(form.quantity),
-        }),
-      });
+      const isEditing = editingId !== null;
+
+      const response = await fetch(
+        isEditing ? `${API_URL}/${editingId}` : API_URL,
+        {
+          method: isEditing ? 'PUT' : 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            ...form,
+            quantity: Number(form.quantity),
+          }),
+        }
+      );
 
       const data = await response.json();
 
+      // Laravel validation errors
       if (response.status === 422) {
         setValidationErrors(data.errors || {});
+
+        const messages = Object.values(data.errors || {})
+          .flat()
+          .join('\n');
+
+        await Swal.fire({
+          icon: 'warning',
+          title: 'Validation Error',
+          text: messages || 'Please check your input.',
+          confirmButtonColor: '#2563eb',
+        });
+
         return;
       }
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to save equipment.');
+        throw new Error(
+          data.message || 'Failed to save equipment.'
+        );
       }
 
-      cancelForm();
+      closeFormModal();
+
       await fetchEquipment();
+
+      showSuccess(
+        isEditing
+          ? 'Equipment updated successfully!'
+          : 'Equipment created successfully!'
+      );
+
     } catch (err) {
-      setError(err.message);
+      showError(err.message);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  // Delete equipment with SweetAlert confirmation
+  async function handleDelete(item) {
+    const result = await Swal.fire({
+      title: 'Are you sure?',
+      text: `You are about to delete "${item.name}". This action cannot be undone.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'Yes, delete it!',
+      cancelButtonText: 'Cancel',
+      reverseButtons: true,
+    });
+
+    if (!result.isConfirmed) {
+      return;
+    }
+
+    try {
+      Swal.fire({
+        title: 'Deleting...',
+        text: 'Please wait.',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => {
+          Swal.showLoading();
+        },
+      });
+
+      const response = await fetch(`${API_URL}/${item.id}`, {
+        method: 'DELETE',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || 'Failed to delete equipment.'
+        );
+      }
+
+      await fetchEquipment();
+
+      showSuccess('Equipment deleted successfully!');
+
+    } catch (err) {
+      Swal.close();
+      showError(err.message);
     }
   }
 
@@ -140,7 +279,7 @@ function App() {
               </span>
 
               <button
-                onClick={openForm}
+                onClick={openCreateModal}
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
               >
                 + Add Equipment
@@ -176,7 +315,7 @@ function App() {
           )}
 
           {/* Equipment Table */}
-          {!loading && !error && equipment.length > 0 && (
+          {!loading && equipment.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-slate-600">
@@ -185,12 +324,16 @@ function App() {
                     <th className="px-4 py-3 font-semibold">Category</th>
                     <th className="px-4 py-3 font-semibold">Quantity</th>
                     <th className="px-4 py-3 font-semibold">Status</th>
+                    <th className="px-4 py-3 text-center font-semibold">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-slate-100">
                   {equipment.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50">
+
                       <td className="px-4 py-3 font-medium">
                         {item.name}
                       </td>
@@ -203,9 +346,41 @@ function App() {
                         {item.quantity}
                       </td>
 
-                      <td className="px-4 py-3 capitalize">
-                        {item.status}
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-medium ${
+                            item.status === 'available'
+                              ? 'bg-green-100 text-green-700'
+                              : item.status === 'in use'
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}
+                        >
+                          {item.status}
+                        </span>
                       </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3">
+                        <div className="flex justify-center gap-2">
+
+                          <button
+                            onClick={() => openEditModal(item)}
+                            className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                          >
+                            Edit
+                          </button>
+
+                          <button
+                            onClick={() => handleDelete(item)}
+                            className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100"
+                          >
+                            Delete
+                          </button>
+
+                        </div>
+                      </td>
+
                     </tr>
                   ))}
                 </tbody>
@@ -216,13 +391,13 @@ function App() {
         </section>
       </main>
 
-      {/* Add Equipment Modal */}
+      {/* Create / Edit Equipment Modal */}
       {showForm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
-              cancelForm();
+              closeFormModal();
             }
           }}
         >
@@ -235,18 +410,20 @@ function App() {
             <div className="mb-6 flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">
-                  Add New Equipment
+                  {editingId ? 'Edit Equipment' : 'Add New Equipment'}
                 </h3>
 
                 <p className="mt-1 text-sm text-slate-500">
-                  Enter the equipment details below.
+                  {editingId
+                    ? 'Update the equipment details below.'
+                    : 'Enter the equipment details below.'}
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={cancelForm}
-                className="rounded-lg px-3 py-1 text-2xl text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                onClick={closeFormModal}
+                className="rounded-lg px-3 py-1 text-2xl text-slate-500 hover:bg-slate-100"
                 aria-label="Close modal"
               >
                 &times;
@@ -267,6 +444,7 @@ function App() {
                   name="name"
                   value={form.name}
                   onChange={handleChange}
+                  required
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   placeholder="e.g. Dell Laptop"
                 />
@@ -289,6 +467,7 @@ function App() {
                   name="category"
                   value={form.category}
                   onChange={handleChange}
+                  required
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   placeholder="e.g. Electronics"
                 />
@@ -310,8 +489,10 @@ function App() {
                   type="number"
                   name="quantity"
                   min="0"
+                  step="1"
                   value={form.quantity}
                   onChange={handleChange}
+                  required
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
 
@@ -332,6 +513,7 @@ function App() {
                   name="status"
                   value={form.status}
                   onChange={handleChange}
+                  required
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="available">Available</option>
@@ -372,9 +554,10 @@ function App() {
 
             {/* Modal Footer */}
             <div className="mt-8 flex justify-end gap-3 border-t border-slate-200 pt-5">
+
               <button
                 type="button"
-                onClick={cancelForm}
+                onClick={closeFormModal}
                 disabled={submitting}
                 className="rounded-lg border border-slate-300 bg-white px-5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
               >
@@ -386,8 +569,13 @@ function App() {
                 disabled={submitting}
                 className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {submitting ? 'Saving...' : 'Save Equipment'}
+                {submitting
+                  ? 'Saving...'
+                  : editingId
+                  ? 'Update Equipment'
+                  : 'Save Equipment'}
               </button>
+
             </div>
 
           </form>
