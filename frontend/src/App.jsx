@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import Swal from 'sweetalert2';
 
 const API_URL = 'http://localhost:8000/api/equipment';
+const ITEMS_PER_PAGE = 5;
 
 const initialForm = {
   name: '',
@@ -24,11 +25,16 @@ function App() {
   const [validationErrors, setValidationErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
+  // Search, filters, and pagination
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+
   useEffect(() => {
     fetchEquipment();
   }, []);
 
-  // SweetAlert success notification
   function showSuccess(message) {
     Swal.fire({
       icon: 'success',
@@ -40,7 +46,6 @@ function App() {
     });
   }
 
-  // SweetAlert error notification
   function showError(message) {
     Swal.fire({
       icon: 'error',
@@ -50,7 +55,6 @@ function App() {
     });
   }
 
-  // Fetch all equipment
   async function fetchEquipment() {
     try {
       const response = await fetch(API_URL, {
@@ -74,7 +78,50 @@ function App() {
     }
   }
 
-  // Handle form input changes
+  // Get unique categories from existing equipment
+  const categories = [
+    ...new Set(
+      equipment
+        .map((item) => item.category)
+        .filter(Boolean)
+    ),
+  ].sort();
+
+  // Apply search and filters
+  const filteredEquipment = equipment.filter((item) => {
+    const search = searchTerm.toLowerCase().trim();
+
+    const matchesSearch =
+      item.name.toLowerCase().includes(search) ||
+      item.category.toLowerCase().includes(search) ||
+      (item.notes || '').toLowerCase().includes(search);
+
+    const matchesStatus =
+      selectedStatus === 'all' ||
+      item.status === selectedStatus;
+
+    const matchesCategory =
+      selectedCategory === 'all' ||
+      item.category === selectedCategory;
+
+    return matchesSearch && matchesStatus && matchesCategory;
+  });
+
+  // Pagination calculations
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredEquipment.length / ITEMS_PER_PAGE)
+  );
+
+  const safePage = Math.min(currentPage, totalPages);
+
+  const startIndex = (safePage - 1) * ITEMS_PER_PAGE;
+
+  const paginatedEquipment = filteredEquipment.slice(
+    startIndex,
+    startIndex + ITEMS_PER_PAGE
+  );
+
   function handleChange(event) {
     const { name, value } = event.target;
 
@@ -84,7 +131,6 @@ function App() {
     }));
   }
 
-  // Open create modal
   function openCreateModal() {
     setEditingId(null);
     setForm(initialForm);
@@ -93,7 +139,6 @@ function App() {
     setShowForm(true);
   }
 
-  // Open edit modal
   function openEditModal(item) {
     setEditingId(item.id);
 
@@ -110,7 +155,6 @@ function App() {
     setShowForm(true);
   }
 
-  // Close form modal
   function closeFormModal() {
     setShowForm(false);
     setEditingId(null);
@@ -146,7 +190,6 @@ function App() {
 
       const data = await response.json();
 
-      // Laravel validation errors
       if (response.status === 422) {
         setValidationErrors(data.errors || {});
 
@@ -174,6 +217,8 @@ function App() {
 
       await fetchEquipment();
 
+      setCurrentPage(1);
+
       showSuccess(
         isEditing
           ? 'Equipment updated successfully!'
@@ -187,7 +232,7 @@ function App() {
     }
   }
 
-  // Delete equipment with SweetAlert confirmation
+  // Delete equipment
   async function handleDelete(item) {
     const result = await Swal.fire({
       title: 'Are you sure?',
@@ -241,6 +286,14 @@ function App() {
     }
   }
 
+  // Reset all filters
+  function clearFilters() {
+    setSearchTerm('');
+    setSelectedStatus('all');
+    setSelectedCategory('all');
+    setCurrentPage(1);
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
 
@@ -273,7 +326,7 @@ function App() {
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <span className="rounded-full bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700">
                 Total records: {equipment.length}
               </span>
@@ -286,6 +339,94 @@ function App() {
               </button>
             </div>
           </div>
+
+          {/* Search and Filters */}
+          <div className="mb-6 grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-4">
+
+            {/* Search */}
+            <div className="md:col-span-2">
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Search Equipment
+              </label>
+
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(event) => {
+                  setSearchTerm(event.target.value);
+                  setCurrentPage(1);
+                }}
+                placeholder="Search by name, category, or notes..."
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            {/* Status Filter */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Filter by Status
+              </label>
+
+              <select
+                value={selectedStatus}
+                onChange={(event) => {
+                  setSelectedStatus(event.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">All Statuses</option>
+                <option value="available">Available</option>
+                <option value="in use">In Use</option>
+                <option value="broken">Broken</option>
+              </select>
+            </div>
+
+            {/* Category Filter */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Filter by Category
+              </label>
+
+              <select
+                value={selectedCategory}
+                onChange={(event) => {
+                  setSelectedCategory(event.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">All Categories</option>
+
+                {categories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Clear Filters */}
+            <div className="flex items-end md:col-span-4">
+              <button
+                onClick={clearFilters}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+              >
+                Clear Search & Filters
+              </button>
+            </div>
+
+          </div>
+
+          {/* Results Count */}
+          {!loading && (
+            <div className="mb-4 text-sm text-slate-500">
+              Showing {filteredEquipment.length === 0 ? 0 : startIndex + 1}
+              {' - '}
+              {Math.min(startIndex + ITEMS_PER_PAGE, filteredEquipment.length)}
+              {' '}of {filteredEquipment.length} matching records
+            </div>
+          )}
 
           {/* Error Message */}
           {error && (
@@ -302,20 +443,22 @@ function App() {
           )}
 
           {/* Empty State */}
-          {!loading && !error && equipment.length === 0 && (
+          {!loading && filteredEquipment.length === 0 && (
             <div className="rounded-lg border border-dashed border-slate-300 px-6 py-12 text-center">
               <h3 className="font-medium text-slate-800">
                 No equipment found
               </h3>
 
               <p className="mt-2 text-sm text-slate-500">
-                Your equipment inventory is currently empty.
+                {equipment.length === 0
+                  ? 'Your equipment inventory is currently empty.'
+                  : 'No records match your search or selected filters.'}
               </p>
             </div>
           )}
 
           {/* Equipment Table */}
-          {!loading && equipment.length > 0 && (
+          {!loading && paginatedEquipment.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-slate-600">
@@ -331,7 +474,7 @@ function App() {
                 </thead>
 
                 <tbody className="divide-y divide-slate-100">
-                  {equipment.map((item) => (
+                  {paginatedEquipment.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50">
 
                       <td className="px-4 py-3 font-medium">
@@ -360,10 +503,8 @@ function App() {
                         </span>
                       </td>
 
-                      {/* Actions */}
                       <td className="px-4 py-3">
                         <div className="flex justify-center gap-2">
-
                           <button
                             onClick={() => openEditModal(item)}
                             className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100"
@@ -377,7 +518,6 @@ function App() {
                           >
                             Delete
                           </button>
-
                         </div>
                       </td>
 
@@ -388,10 +528,54 @@ function App() {
             </div>
           )}
 
+          {/* Pagination */}
+          {!loading && filteredEquipment.length > 0 && (
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-5">
+
+              <p className="text-sm text-slate-500">
+                Page {safePage} of {totalPages}
+              </p>
+
+              <div className="flex items-center gap-2">
+
+                <button
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  disabled={safePage === 1}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Previous
+                </button>
+
+                {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                      safePage === page
+                        ? 'bg-blue-600 text-white'
+                        : 'border border-slate-300 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+
+                <button
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  disabled={safePage === totalPages}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                </button>
+
+              </div>
+            </div>
+          )}
+
         </section>
       </main>
 
-      {/* Create / Edit Equipment Modal */}
+      {/* Create / Edit Modal */}
       {showForm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -405,8 +589,6 @@ function App() {
             onSubmit={handleSubmit}
             className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl"
           >
-
-            {/* Modal Header */}
             <div className="mb-6 flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">
@@ -430,10 +612,8 @@ function App() {
               </button>
             </div>
 
-            {/* Form Fields */}
             <div className="grid gap-5 md:grid-cols-2">
 
-              {/* Name */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
                   Name *
@@ -456,7 +636,6 @@ function App() {
                 )}
               </div>
 
-              {/* Category */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
                   Category *
@@ -479,7 +658,6 @@ function App() {
                 )}
               </div>
 
-              {/* Quantity */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
                   Quantity *
@@ -503,7 +681,6 @@ function App() {
                 )}
               </div>
 
-              {/* Status */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
                   Status *
@@ -528,7 +705,6 @@ function App() {
                 )}
               </div>
 
-              {/* Notes */}
               <div className="md:col-span-2">
                 <label className="mb-1 block text-sm font-medium text-slate-700">
                   Notes
@@ -552,9 +728,7 @@ function App() {
 
             </div>
 
-            {/* Modal Footer */}
             <div className="mt-8 flex justify-end gap-3 border-t border-slate-200 pt-5">
-
               <button
                 type="button"
                 onClick={closeFormModal}
@@ -575,7 +749,6 @@ function App() {
                   ? 'Update Equipment'
                   : 'Save Equipment'}
               </button>
-
             </div>
 
           </form>
